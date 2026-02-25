@@ -260,32 +260,181 @@ Match: [YES/NO]
 ### Source Code
 
 ```python
-# [PASTE CBC TAMPER TEST AND GCM TAMPER TEST CODE HERE]
+"""
+Task 6 — Integrity vs. Confidentiality (AES-GCM) (10 pts)
+============================================================
+Demonstrates the difference between confidentiality-only (CBC) and
+authenticated encryption (GCM / AEAD).
+
+CBC:
+  - Flipping a byte in the ciphertext corrupts the corresponding plaintext block
+    and causes predictable bit-flips in the NEXT block — but CBC accepts it silently.
+  - No integrity guarantee: tampering is undetected.
+
+GCM (AEAD):
+  - The authentication tag T covers the entire ciphertext.
+  - Any modification to the ciphertext OR the tag causes decryption to raise
+    an InvalidTag exception — tampering is always detected.
+"""
+
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
+from cryptography.exceptions import InvalidTag
+
+KEY_SIZE   = 32   # 256-bit
+BLOCK_SIZE = 16
+GCM_NONCE_SIZE = 12   # 96-bit recommended for GCM
+
+
+# ---------------------------------------------------------------------------
+# CBC helpers (PKCS#7)
+# ---------------------------------------------------------------------------
+
+def pkcs7_pad(data: bytes) -> bytes:
+    padder = padding.PKCS7(BLOCK_SIZE * 8).padder()
+    return padder.update(data) + padder.finalize()
+
+
+def pkcs7_unpad(data: bytes) -> bytes:
+    unpadder = padding.PKCS7(BLOCK_SIZE * 8).unpadder()
+    return unpadder.update(data) + unpadder.finalize()
+
+
+def cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
+    padded = pkcs7_pad(plaintext)
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    enc = cipher.encryptor()
+    return enc.update(padded) + enc.finalize()
+
+
+def cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    dec = cipher.decryptor()
+    padded = dec.update(ciphertext) + dec.finalize()
+    return pkcs7_unpad(padded)
+
+
+def flip_byte(data: bytes, offset: int) -> bytes:
+    """Flip a single byte in data at the given offset."""
+    ba = bytearray(data)
+    ba[offset] ^= 0xFF
+    return bytes(ba)
+
+
+# ---------------------------------------------------------------------------
+# Task 6a: CBC tamper test
+# ---------------------------------------------------------------------------
+
+def test_cbc_tamper(key: bytes, plaintext: bytes) -> None:
+    print("=== CBC Tamper Test ===")
+    iv = os.urandom(BLOCK_SIZE)
+    ciphertext = cbc_encrypt(key, iv, plaintext)
+    tampered   = flip_byte(ciphertext, offset=0)  # flip first byte
+
+    print(f"  Original  ciphertext[0]: {ciphertext[0]:02x}")
+    print(f"  Tampered  ciphertext[0]: {tampered[0]:02x}")
+
+    try:
+        recovered = cbc_decrypt(key, iv, tampered)
+        print(f"  Decryption succeeded (no authentication check in CBC).")
+        print(f"  Original  plaintext (hex): {plaintext[:32].hex()}")
+        print(f"  Recovered plaintext (hex): {recovered[:32].hex()}")
+        print(f"  Data corruption detected by comparison: {plaintext[:32] != recovered[:32]}")
+    except Exception as e:
+        print(f"  Decryption raised: {e}")
+
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Task 6b: GCM tamper test
+# ---------------------------------------------------------------------------
+
+def test_gcm_tamper(key: bytes, plaintext: bytes) -> None:
+    print("=== GCM Tamper Test ===")
+    aesgcm = AESGCM(key)
+    nonce  = os.urandom(GCM_NONCE_SIZE)
+    ciphertext_tag = aesgcm.encrypt(nonce, plaintext, associated_data=None)
+    # ciphertext_tag = ciphertext || 16-byte tag
+
+    tampered = flip_byte(ciphertext_tag, offset=0)  # flip one byte in ciphertext
+
+    print(f"  Original  ciphertext_tag[0]: {ciphertext_tag[0]:02x}")
+    print(f"  Tampered  ciphertext_tag[0]: {tampered[0]:02x}")
+
+    try:
+        aesgcm.decrypt(nonce, tampered, associated_data=None)
+        print("  ERROR: Decryption succeeded despite tampering — this should not happen.")
+    except InvalidTag:
+        print("  InvalidTag exception raised — tampering detected. (expected)")
+    except Exception as e:
+        print(f"  Unexpected exception: {e}")
+
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    key       = os.urandom(KEY_SIZE)
+    plaintext = b"This is a secret message that must not be tampered with!" * 2
+
+    print(f"Key (hex): {key.hex()}\n")
+
+    test_cbc_tamper(key, plaintext)
+    test_gcm_tamper(key, plaintext)
+
+    print("=== Summary ===")
+    print("  CBC: accepts tampered ciphertext — corrupts plaintext silently (no integrity).")
+    print("  GCM: rejects tampered ciphertext — raises InvalidTag (AEAD = confidentiality + integrity).")
+
 ```
 
 ### CBC Tamper Evidence
 
-[INSERT SCREENSHOT: Flip 1 byte in CBC ciphertext → decrypt → observe corrupted output or padding error]
+
+![Task 6 CBC tamper evidence](Screenshots/task6a.png)
+```
+=== CBC Tamper Test ===
+  Original  ciphertext[0]: ba
+  Tampered  ciphertext[0]: 45
+  Decryption succeeded (no authentication check in CBC).
+  Original  plaintext (hex): 54686973206973206120736563726574206d6573736167652074686174206d75
+  Recovered plaintext (hex): 5963f5dbe9e62868bc156abdb4f7dceddf6d6573736167652074686174206d75
+  Data corruption detected by comparison: True
 
 ```
-# [PASTE DECRYPTION OUTPUT AFTER TAMPERING — SHOW CORRUPTION OR EXCEPTION]
-```
 
-**Observation:** [DESCRIBE what happened — did it corrupt a block? Throw a padding exception? Accept silently?]
+**Observation:** CBC accepted the tampered ciphertext and still decrypted, producing corrupted plaintext without any authentication error. This shows CBC provides confidentiality but not integrity.
 
 ### GCM Tamper Evidence
 
 [INSERT SCREENSHOT: Flip 1 byte in GCM ciphertext or tag → decryption fails with authentication error]
+![Task 6 GCM Tamper evidence](Screenshots/task6b.png)
+```
+=== GCM Tamper Test ===
+  Original  ciphertext_tag[0]: 52
+  Tampered  ciphertext_tag[0]: ad
+  InvalidTag exception raised — tampering detected. (expected)
 
 ```
-# [PASTE EXCEPTION OR ERROR OUTPUT SHOWING AUTHENTICATION FAILURE]
-```
 
-**Observation:** [DESCRIBE that GCM rejected the tampered ciphertext and raised an authentication failure]
+**Observation:** AES-GCM rejected the tampered ciphertext by failing authentication and raising an InvalidTag error. No plaintext was returned, demonstrating integrity protection.
 
 ### Comparison: Confidentiality vs. Integrity
 
-[EXPLAIN the distinction between confidentiality (an attacker cannot learn plaintext) and integrity (an attacker cannot modify ciphertext undetected). CBC provides confidentiality but no integrity — a tampered ciphertext decrypts to garbage silently. GCM is AEAD (Authenticated Encryption with Associated Data): the authentication tag T covers the ciphertext, so any modification to C or T causes decryption to return ⊥, catching tampering. Use AES-GCM (or another AEAD) in practice rather than CBC without a MAC.]
+Confidentiality ensures that an attacker cannot learn the plaintext without the secret key. Integrity ensures that an attacker cannot modify the ciphertext without the receiver detecting that modification.
+
+In AES-CBC mode, encryption provides confidentiality by transforming plaintext blocks into ciphertext blocks. However, CBC does not authenticate the ciphertext. As demonstrated above, flipping a single byte in the ciphertext caused the first plaintext block to become corrupted, yet decryption still succeeded without any error. This shows that CBC does not provide integrity — tampering may go undetected and result in corrupted but accepted plaintext.
+
+In contrast, AES-GCM is an AEAD (Authenticated Encryption with Associated Data) mode. It produces both ciphertext and an authentication tag T that covers the entire ciphertext (and any associated data). During decryption, this tag is verified. If any bit of the ciphertext or tag is modified, decryption fails and returns ⊥ (represented here by an InvalidTag exception). Therefore, AES-GCM provides both confidentiality and integrity.
+
+In practice, encryption without authentication (such as CBC alone) is insufficient for secure systems. Modern cryptographic standards recommend using AEAD modes like AES-GCM to ensure both secrecy and tamper detection.
 
 ---
 
