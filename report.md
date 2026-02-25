@@ -443,48 +443,230 @@ In practice, encryption without authentication (such as CBC alone) is insufficie
 ### Source Code
 
 ```python
-# [PASTE BENCHMARKING SCRIPT HERE]
-# Measures encrypt + decrypt times for ECB, CBC, CTR, GCM
-# Each (mode, file size) combination is repeated 5 times and averaged to reduce timing variance
+"""
+Task 7 — Performance Benchmarking (10 pts)
+============================================
+Benchmarks AES-ECB, AES-CBC, AES-CTR, and AES-GCM across three file sizes.
+
+Methodology:
+- File sizes: 1 KB, 1 MB, 10 MB
+- Modes: ECB, CBC, CTR, GCM
+- Each (mode, file size) combination is repeated 5 times and averaged
+  to reduce timing variance caused by system load and cache effects.
+- Reports average encryption and decryption time in seconds.
+"""
+
+import os
+import time
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
+
+KEY_SIZE      = 32    # 256-bit
+BLOCK_SIZE    = 16
+GCM_NONCE_SIZE = 12
+REPETITIONS   = 5     # repeat 5 times and average
+
+FILE_SIZES = {
+    "1 KB":  1 * 1024,
+    "1 MB":  1 * 1024 * 1024,
+    "10 MB": 10 * 1024 * 1024,
+}
+
+
+# ---------------------------------------------------------------------------
+# Padding helpers (ECB and CBC need block-aligned input)
+# ---------------------------------------------------------------------------
+
+def pkcs7_pad(data: bytes) -> bytes:
+    padder = padding.PKCS7(BLOCK_SIZE * 8).padder()
+    return padder.update(data) + padder.finalize()
+
+
+def pkcs7_unpad(data: bytes) -> bytes:
+    unpadder = padding.PKCS7(BLOCK_SIZE * 8).unpadder()
+    return unpadder.update(data) + unpadder.finalize()
+
+
+# ---------------------------------------------------------------------------
+# Encrypt / decrypt functions (one call per mode)
+# ---------------------------------------------------------------------------
+
+def bench_ecb(key: bytes, plaintext: bytes) -> tuple[float, float]:
+    """Return (enc_time, dec_time) for AES-ECB."""
+    padded = pkcs7_pad(plaintext)
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+    enc = cipher.encryptor()
+    ct = enc.update(padded) + enc.finalize()
+    enc_time = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+    dec = cipher.decryptor()
+    pkcs7_unpad(dec.update(ct) + dec.finalize())
+    dec_time = time.perf_counter() - t0
+
+    return enc_time, dec_time
+
+
+def bench_cbc(key: bytes, plaintext: bytes) -> tuple[float, float]:
+    """Return (enc_time, dec_time) for AES-CBC with PKCS#7."""
+    iv     = os.urandom(BLOCK_SIZE)
+    padded = pkcs7_pad(plaintext)
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    enc = cipher.encryptor()
+    ct = enc.update(padded) + enc.finalize()
+    enc_time = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    dec = cipher.decryptor()
+    pkcs7_unpad(dec.update(ct) + dec.finalize())
+    dec_time = time.perf_counter() - t0
+
+    return enc_time, dec_time
+
+
+def bench_ctr(key: bytes, plaintext: bytes) -> tuple[float, float]:
+    """Return (enc_time, dec_time) for AES-CTR."""
+    nonce = os.urandom(BLOCK_SIZE)
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
+    enc = cipher.encryptor()
+    ct = enc.update(plaintext) + enc.finalize()
+    enc_time = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
+    dec = cipher.decryptor()
+    dec.update(ct) + dec.finalize()
+    dec_time = time.perf_counter() - t0
+
+    return enc_time, dec_time
+
+
+def bench_gcm(key: bytes, plaintext: bytes) -> tuple[float, float]:
+    """Return (enc_time, dec_time) for AES-GCM (AEAD)."""
+    aesgcm = AESGCM(key)
+    nonce  = os.urandom(GCM_NONCE_SIZE)
+
+    t0 = time.perf_counter()
+    ct = aesgcm.encrypt(nonce, plaintext, associated_data=None)
+    enc_time = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    aesgcm.decrypt(nonce, ct, associated_data=None)
+    dec_time = time.perf_counter() - t0
+
+    return enc_time, dec_time
+
+
+BENCH_FUNCS = {
+    "ECB": bench_ecb,
+    "CBC": bench_cbc,
+    "CTR": bench_ctr,
+    "GCM": bench_gcm,
+}
+
+
+# ---------------------------------------------------------------------------
+# Runner — each combination repeated 5 times and averaged
+# ---------------------------------------------------------------------------
+
+def run_benchmark(key: bytes) -> dict:
+    results = {}
+    for size_label, size_bytes in FILE_SIZES.items():
+        plaintext = os.urandom(size_bytes)
+        for mode_name, bench_fn in BENCH_FUNCS.items():
+            enc_times = []
+            dec_times = []
+            for _ in range(REPETITIONS):
+                e, d = bench_fn(key, plaintext)
+                enc_times.append(e)
+                dec_times.append(d)
+            avg_enc = sum(enc_times) / REPETITIONS
+            avg_dec = sum(dec_times) / REPETITIONS
+            results[(size_label, mode_name)] = (avg_enc, avg_dec)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    key = os.urandom(KEY_SIZE)
+    print(f"=== Task 7: AES Mode Performance Benchmark ===")
+    print(f"Key (hex): {key.hex()}")
+    print(f"Repetitions per combination: {REPETITIONS} (results are averaged)\n")
+
+    results = run_benchmark(key)
+
+    # Print results table
+    header = f"{'File Size':<10} {'Mode':<6} {'Avg Enc (s)':<16} {'Avg Dec (s)'}"
+    print(header)
+    print("-" * len(header))
+    for size_label in FILE_SIZES:
+        for mode_name in BENCH_FUNCS:
+            avg_enc, avg_dec = results[(size_label, mode_name)]
+            print(f"{size_label:<10} {mode_name:<6} {avg_enc:<16.6f} {avg_dec:.6f}")
+        print()
 ```
 
 ### Results Table
 
 | File Size | Mode | Avg Enc Time (s) | Avg Dec Time (s) |
-|-----------|------|-----------------|-----------------|
-| 1 KB      | ECB  |                 |                 |
-| 1 KB      | CBC  |                 |                 |
-| 1 KB      | CTR  |                 |                 |
-| 1 KB      | GCM  |                 |                 |
-| 1 MB      | ECB  |                 |                 |
-| 1 MB      | CBC  |                 |                 |
-| 1 MB      | CTR  |                 |                 |
-| 1 MB      | GCM  |                 |                 |
-| 10 MB     | ECB  |                 |                 |
-| 10 MB     | CBC  |                 |                 |
-| 10 MB     | CTR  |                 |                 |
-| 10 MB     | GCM  |                 |                 |
+|-----------|------|------------------|------------------|
+| 1 KB  | ECB | 0.000702 | 0.000007 |
+| 1 KB  | CBC | 0.000005 | 0.000004 |
+| 1 KB  | CTR | 0.000005 | 0.000004 |
+| 1 KB  | GCM | 0.000002 | 0.000001 |
+| 1 MB  | ECB | 0.000535 | 0.000516 |
+| 1 MB  | CBC | 0.000996 | 0.000475 |
+| 1 MB  | CTR | 0.000391 | 0.000264 |
+| 1 MB  | GCM | 0.000253 | 0.000279 |
+| 10 MB | ECB | 0.002973 | 0.004152 |
+| 10 MB | CBC | 0.007460 | 0.004016 |
+| 10 MB | CTR | 0.002907 | 0.002410 |
+| 10 MB | GCM | 0.002125 | 0.002226 |
 
 ### Performance Analysis
 
-[PARAGRAPH 1 — DISCUSS:
-- CBC sequential chaining: each block depends on the previous ciphertext block, so encryption cannot be parallelized. Decryption can be parallelized since C_{i-1} is known.
-- CTR and GCM parallelism: both generate keystream blocks independently (E_k(Nonce || i)), so encryption and decryption are fully parallelizable and typically faster than CBC at scale.
-- ECB speed vs. insecurity: ECB is the fastest mode (no chaining, fully parallel) but is cryptographically broken for most real-world use cases due to pattern leakage.]
+PARAGRAPH 1 — DISCUSS:
+CBC encryption is sequential because each ciphertext block depends on the previous ciphertext block (Cᵢ = Eₖ(Pᵢ ⊕ Cᵢ₋₁)), which prevents parallelization during encryption. This is reflected in the results: for 10 MB, CBC encryption (0.007460 s) is noticeably slower than CTR (0.002907 s) and GCM (0.002125 s). In contrast, CTR and GCM generate keystream blocks independently using Eₖ(Nonce || Counterᵢ), allowing full parallelization. ECB is also fully parallelizable and appears relatively fast, but it is insecure in practice due to deterministic pattern leakage.
 
-[PARAGRAPH 2 — DISCUSS:
-- GCM authentication overhead: AES-GCM adds a GHASH computation over the ciphertext to produce the authentication tag, which introduces a small but measurable overhead compared to pure CTR. Discuss whether this overhead is visible in your results and whether it is worthwhile given the integrity guarantees.]
+PARAGRAPH 2 — DISCUSS:
+AES-GCM introduces authentication overhead by computing a GHASH over the ciphertext to produce an authentication tag. Despite this additional computation, GCM performance is comparable to CTR and often slightly faster in these results (e.g., 10 MB encryption: GCM 0.002125 s vs CTR 0.002907 s). This demonstrates that the integrity protection provided by AEAD comes with minimal performance cost, making AES-GCM the preferred modern mode for secure systems.
 
 ---
 
 ## Key Lessons Learned
 
-- [SUMMARIZE key takeaway about ECB and why determinism breaks semantic security]
-- [SUMMARIZE key takeaway about IV/nonce freshness in CBC and CTR]
-- [SUMMARIZE key takeaway about nonce reuse leading to two-time pad attacks in CTR]
-- [SUMMARIZE key takeaway about the birthday bound and nonce space sizing]
-- [SUMMARIZE key takeaway about AEAD and why confidentiality alone is insufficient]
-- [SUMMARIZE key takeaway about the performance trade-offs between modes]
+ECB and Determinism:
+ECB mode is deterministic: identical plaintext blocks always produce identical ciphertext blocks (Cᵢ = Eₖ(Pᵢ)). This leaks structural patterns in the data and allows an adversary to distinguish encryptions, violating semantic security (IND-CPA). Even though ECB may appear fast in benchmarks, it is insecure for real-world use due to pattern leakage.
+
+IV / Nonce Freshness in CBC and CTR:
+Both CBC and CTR rely on randomness (IV or nonce) to achieve semantic security. If a fresh, unpredictable IV/nonce is used for each encryption, ciphertexts remain unlinkable. Reusing an IV or nonce under the same key leaks information about message structure and breaks security assumptions.
+
+Nonce Reuse and Two-Time Pad Failure in CTR:
+In CTR mode, ciphertext is generated as C = P ⊕ K where K is the keystream derived from the nonce and counter. If the same nonce is reused with the same key, the identical keystream is reused. XORing two ciphertexts eliminates the keystream:
+C₁ ⊕ C₂ = P₁ ⊕ P₂.
+This creates a two-time pad scenario, allowing plaintext recovery via crib dragging. Nonce uniqueness is therefore a strict security requirement.
+
+Birthday Bound and Nonce Space Sizing:
+The birthday paradox shows that collisions occur after approximately 1.2 × 2^(r/2) encryptions for an r-bit nonce. If the nonce space is too small, collisions become likely, leading to keystream reuse and catastrophic failure in CTR. This demonstrates why modern systems use large nonce sizes (e.g., 96 bits in GCM).
+
+AEAD and Why Confidentiality Alone Is Insufficient:
+Encryption alone does not guarantee integrity. As demonstrated with CBC, tampered ciphertext may decrypt to corrupted plaintext without detection. AEAD modes such as AES-GCM provide both confidentiality and integrity by generating an authentication tag. Any modification to the ciphertext or tag causes decryption to fail, preventing silent corruption.
+
+Performance Trade-Offs Between Modes:
+ECB, CTR, and GCM can be parallelized and scale efficiently with large data sizes. CBC encryption is sequential due to block chaining, making it slower at scale. Although GCM introduces authentication overhead (GHASH computation), benchmark results show that the performance cost is minimal compared to CTR. Given its integrity guarantees and competitive performance, AES-GCM is the preferred modern mode.
 
 ---
 
