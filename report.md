@@ -113,32 +113,79 @@ Match: [YES/NO]
 ### Source Code
 
 ```python
-# [PASTE CTR ENCRYPTION/DECRYPTION CODE HERE]
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+def GetAESCTRCipher(key, nonce):
+    #AES-CTR needs a 16-byte nonce (This functions as our initial counter block)
+    return Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
+
+def FileEncryption(input_file, output_file, key, nonce):
+    Cipher = GetAESCTRCipher(key, nonce)
+    Encryptor = Cipher.encryptor()
+    
+    with open(input_file, 'rb') as f_in:
+        Plaintext = f_in.read()
+        
+    CipherText = Encryptor.update(Plaintext) + Encryptor.finalize()
+    
+    with open(output_file, 'wb') as f_out:
+        f_out.write(CipherText)
+
+def FileDecryption(input_file, output_file, key, nonce):
+    Cipher = GetAESCTRCipher(key, nonce)
+    Decryptor = Cipher.decryptor()
+    
+    with open(input_file, 'rb') as f_in:
+        CipherText = f_in.read()
+        
+    PlainText = Decryptor.update(CipherText) + Decryptor.finalize()
+    
+    with open(output_file, 'wb') as f_out:
+        f_out.write(PlainText)
+
+if __name__ == "__main__":
+    #Generates a Key (32 bytes for AES-256) and a Nonce (16 bytes)
+    key = os.urandom(32)
+    nonce = os.urandom(16)
+    
+    print(f"Key (hex): {key.hex()}")
+    print(f"Nonce (hex): {nonce.hex()}")
+
+    #Encrypts
+    print("Encrypting ctr_msg.bin \n Creating ctr_ct.bin...")
+    FileEncryption("ctr_msg.bin", "ctr_ct.bin", key, nonce)
+
+    #Decrypts
+    print("Decrypting ctr_ct.bin... \n Creating ctr_recovered.bin...")
+    FileDecryption("ctr_ct.bin", "ctr_recovered.bin", key, nonce)
+    
+    print("Done.")
 ```
 
 ### Key and Nonce Details
 
 | Parameter | Size | Value |
 |-----------|------|-------|
-| Key       | [X bits] | [HEX] |
-| Nonce     | [X bytes] | [HEX] |
+| Key       | 32 bytes | a9de4d8ea97c8664fafe81432d4ecba8e6a73711c2978fb5e49d7fc31fd64816 |
+| Nonce     | 16 bytes | 05bc786abd24e5781d8b83002820ff4d |
 | Test file | 4096 bytes | — |
 
 ### Encryption and Decryption Output
 
-[INSERT SCREENSHOT: Script run showing encryption and decryption of the 4096-byte test file]
+![Task 3 Results](Screenshots/Task3.png)
 
 ### SHA-256 Hash Verification
 
 ```
-SHA-256(original file):   [HASH]
-SHA-256(decrypted file):  [HASH]
-Match: [YES/NO]
+SHA-256(original file):   767f64063b2843f478f0b1763d97c9052e0023e2bcd7b0de9a473cfcfd6b9ef8
+SHA-256(decrypted file):  767f64063b2843f478f0b1763d97c9052e0023e2bcd7b0de9a473cfcfd6b9ef8
+Match: Yes
 ```
 
 ### Explanation: Why CTR Behaves Like a Stream Cipher
-
-[EXPLAIN that CTR generates a keystream by encrypting successive counter values: K_i = E_k(Nonce || Counter_i). The plaintext is XORed with this keystream, making encryption and decryption identical operations. No padding is required and blocks can be processed in parallel since each block's keystream is independent.]
+AES-CTR transforms a block cipher into a stream cipher; instead of encrypting the plaintext directly the block cipher encrypts a unique input block consisting of a Nonce and a Counter (IV=Nonce∣∣Counteri​). This produces a stream of pseudorandom bits known as the keystream, the encryption process is the XOR between the plaintext and the keystream: Ci=Pi⊕Ek(Nonce∣∣Counteri) Because the XOR operation is symmetric decryption is identical to encryption. The receiver generates the same keystream and XORs with the ciphertext to recover the plaintext, unlike the CBC mode there is no chaining between the blocks. This allows for parallel processing meaning that multiple blocks can be encrypted or decrypted simultaneously, which is a just how stream ciphers operate.
 
 ---
 
@@ -152,38 +199,134 @@ Match: [YES/NO]
 ### XOR Script
 
 ```python
-# [PASTE SCRIPT USED TO COMPUTE C1 XOR C2 HERE]
+import sys
+
+def XORByter(b1, b2):
+    """XORs two strings together, and then returns bytes."""
+    #We use zip to XOR byte by byte, then the length will be the shorter of the two.
+    return bytes([x ^ y for x, y in zip(b1, b2)])
+    
+def HexExtractionPreview(data, length=64):
+    """Prints a hexdump-style preview of the data (Hex + ASCII)."""
+    print(f"\n--- PREVIEW OF FIRST {length} BYTES ---")
+    print("OFFSET  HEX BYTES                                 ASCII REPRESENTATION")
+    print("-" * 70)
+    
+    # Take only the first 'length' bytes
+    chunk = data[:length]
+    
+    # Process in rows of 16 bytes
+    for i in range(0, len(chunk), 16):
+        row = chunk[i:i+16]
+        
+        # Hex section
+        hex_vals = ' '.join(f"{b:02x}" for b in row)
+        
+        # ASCII section (replace unprintable chars with '.')
+        ascii_vals = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in row)
+        
+        # Print formatted row
+        print(f"{i:04x}    {hex_vals:<48}  |{ascii_vals}|")
+    print("-" * 70)
+
+def main():
+    print("--- CTR Nonce Reuse Attack ---")
+
+    #Loads the file provided C1, C2, P1
+    try:
+        print("Loading files...")
+        with open("C1.bin", "rb") as f: 
+            C1 = f.read()
+        with open("C2.bin", "rb") as f: 
+            C2 = f.read()
+        with open("P1.bin", "rb") as f: 
+            P1 = f.read()
+            
+        print(f"    Loaded C1: {len(C1)} bytes")
+        print(f"    Loaded C2: {len(C2)} bytes")
+        print(f"    Loaded P1: {len(P1)} bytes")
+
+    except FileNotFoundError as e:
+        print(f"\n Error: {e}")
+        print("Make sure C1.bin, C2.bin, and P1.bin are in this folder.")
+        return
+
+    #Verify the string lengths
+    MinimumLength = min(len(C1), len(C2), len(P1))
+    
+    #Trim to the minimum length to avoid overflow
+    C1 = C1[:MinimumLength]
+    C2 = C2[:MinimumLength]
+    P1 = P1[:MinimumLength]
+
+    #Attack
+    print("\nCalculating Keystream...")
+    KeyStream = XORByter(C1, P1)
+
+    print("Recovering P2...")
+    P2 = XORByter(C2, KeyStream)
+    
+    hexdump_preview(P2)
+    
+    #Check for common file signatures automatically
+    if P2.startswith(b'%PDF'):
+        print("[!] DETECTED PDF FILE HEADER!")
+    elif P2.startswith(b'\x89PNG'):
+        print("[!] DETECTED PNG IMAGE HEADER!")
+    elif P2.startswith(b'\xff\xd8\xff'):
+        print("[!] DETECTED JPEG IMAGE HEADER!")
+    else:
+        print("No file header found. Assumed that plain text has been found.")
+
+    #Display results
+    print("\n--- RECOVERED PLAINTEXT ---")
+    try:
+        #Print as text
+        print(P2.decode('utf-8'))
+    except UnicodeDecodeError:
+        #If it contains non-printable characters show them in hex instead
+        print("Output contains non-printable characters. Showing Hex:")
+        print(P2.hex())
+
+    #Save the result
+    with open("P2_recovered.txt", "wb") as f:
+        f.write(P2)
+    print("\n Saved recovered message to 'P2_recovered.txt'")
+    
+if __name__ == "__main__": 
+    main()
 ```
 
 ### XOR Output Evidence
 
-[INSERT SCREENSHOT: xxd or strings output on X = C1 XOR C2]
+![Task 4 Results](Screenshots/Task4a.png)
+![Task 4 Results](Screenshots/Task4b.png)
 
-```
-# [PASTE RELEVANT HEX/STRING OUTPUT OF X = C1 XOR C2 HERE]
-```
+### Recovered Plaintext (of readable text at top of P2 file)
 
-### Recovered Plaintext (≥ 20 bytes via Crib Dragging)
-
-| Offset | Crib Used | Recovered Text |
-|--------|-----------|----------------|
-| [OFFSET] | [WORD] | [RECOVERED SEGMENT] |
-| [OFFSET] | [WORD] | [RECOVERED SEGMENT] |
-| [OFFSET] | [WORD] | [RECOVERED SEGMENT] |
-| [OFFSET] | [WORD] | [RECOVERED SEGMENT] |
-| [OFFSET] | [WORD] | [RECOVERED SEGMENT] |
-
-**Total bytes recovered:** [≥ 20]
+| Offset | Hex Bytes                                       | Recovered Text   |
+|--------|-------------------------------------------------|------------------|
+| 0000   | 43 4f 4e 46 49 44 45 4e 54 49 41 4c 20 4d 45 4d | CONFIDENTIAL MEM |
+| 0010   | 4f 3a 20 44 6f 20 6e 6f 74 20 73 68 61 72 65 2e | o: Do not share. |
+| 0020   | 20 50 72 6f 6a 65 63 74 3d 53 59 4d 4d 45 54 52 | Project=SYMMETR  |
+| 0030   | 49 43 2d 4c 41 42 3b 20 4d 6f 64 65 3d 43 54 52 | IC-LAB; Mode=CTR |
 
 ### Explanation of Keystream Reuse
 
-**Violated assumption: nonce uniqueness** — CTR mode is secure only when every (key, nonce) pair is used for exactly one encryption; reusing the same nonce with the same key directly violates this assumption and renders the scheme insecure.
-
-[EXPLAIN that when the same nonce is reused in CTR mode with the same key, both ciphertexts are encrypted with the identical keystream K. XORing them cancels K entirely: C1 XOR C2 = (P1 XOR K) XOR (P2 XOR K) = P1 XOR P2. This reduces the problem to breaking a two-time pad, which can be solved by crib dragging.]
+**Violated assumption: nonce uniqueness** — CTR mode is secure only when every (key, nonce) pair is used for exactly one encryption; reusing the same nonce with the same key directly violates this assumption and renders the scheme insecure.  
+When a nonce is reused with the same key the input to the encryption is identical. Since AES is a deterministic function it produces the exact same output (the keystream) for both messages. When two different plaintexts (P1 and P2) are encrypted using this identical keystream, the security falls in on it self. If an attacker captures both ciphertexts (C1 and C2) and XORs them together, the keystream cancels out entirely: C1⊕C2=(P1⊕K)⊕(P2⊕K)=P1⊕P2⊕(K⊕K)=P1⊕P2​. This leaves the attacker with the XOR of the two plaintexts, effectively removing the encryption layer. This creates a classic "Two-Time Pad" vulnerability, where known-plaintext attacks or statistical analysis (crib dragging) can recover the original messages.
 
 ### Mathematical Explanation of Two-Time Pad Failure
 
-[EXPLAIN formally that in the one-time pad / CTR model, security requires the key (keystream) to be used only once. When reused: C1 = P1 XOR K, C2 = P2 XOR K → C1 XOR C2 = P1 XOR P2. The key is eliminated, and any known or guessable structure in P1 or P2 can be exploited to recover both plaintexts.]
+In the One-Time Pad or stream cipher model, perfect secrecy requires the key (or keystream) to be random. the same lenght as the message, and never reused. The math below demonstrates why reuse is catastrophic:
+
+Let K be the keystream generated by the encryption(Nonce∣∣Counter).
+
+Encryption 1: C1=P1⊕K
+Encryption 2: C2=P2⊕K
+
+When an adversary intercepts C1 and C2​ they can compute their XOR sum (X): X=C1⊕C2 and then with substituting the encryption equations: X=(P1⊕K)⊕(P2⊕K). Due to the associative and commutative properties of XOR, we can rearrange the terms: X=P1⊕P2⊕(K⊕K) and then since any value XORed with itself is zero we get X=P1⊕P2⊕0  X=P1⊕P2. ​The keystream (K) has been mathematically eliminated, if the attacker possesses a known plaintext (P1), they can immediately recover the second message (P2) by computing: P2=X⊕P1
+​
 
 ---
 
@@ -192,66 +335,178 @@ Match: [YES/NO]
 ### Source Code
 
 ```python
-# [PASTE COLLISION SIMULATION SCRIPT HERE]
-# Uses small nonce size (e.g. r = 16 bits)
-# Generates random nonce per encryption
-# Records number of encryptions until first nonce collision
+import os
+import secrets
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+# --- Helper Functions for Encryption & XOR ---
+
+def AESCTREncryption(key, NonceInteger, Plaintext):
+    """Encrypts data using AES-CTR with a 16-bit nonce converted to bytes."""
+    NonceBytes = NonceInteger.to_bytes(16, 'big')
+    cipher = Cipher(algorithms.AES(key), modes.CTR(NonceBytes), backend=default_backend())
+    Encryptor = cipher.encryptor()
+    return Encryptor.update(Plaintext) + Encryptor.finalize()
+
+def XORByter(b1, b2):
+    """XORs two byte strings."""
+    return bytes([x ^ y for x, y in zip(b1, b2)])
+
+def DemonstrateTwoTimePad(NonceBits=16):
+    """
+    Simulates encryption to find a collision and proves C1^C2 == P1^P2.
+    """
+    print("\n" + "="*60)
+    print("### Collision Enabling Two-Time Pad Demonstration")
+    print("="*60)
+
+    #Use a fixed key for this demonstration system
+    SystemKey = os.urandom(32)
+    History = {}
+    MaxNonceValues = 2**NonceBits
+    Trials = 0
+
+    print(f"[*] Simulating encrypted traffic with {NonceBits}-bit nonces...")
+    
+    while True:
+        Trials += 1
+        #Generate Nonce
+        Nonce = secrets.randbelow(MaxNonceValues)
+        
+        #Generate a random Plaintext (P2)
+        Plaintext = f"SecretMsg_{Trials}_Random_{secrets.token_hex(4)}".encode()
+        
+        #Encrypt (C2)
+        Ciphertext = AESCTREncryption(SystemKey, Nonce, Plaintext)
+
+        #Check for Collision
+        if Nonce in History:
+            print(f"NONCE COLLISION FOUND after {Trials} encryptions!")
+            print(f"    Nonce Value: {Nonce}")
+            
+            #Retrieve the previous message (P1, C1) that used this nonce
+            OldCiphertext, OldPlaintext = History[Nonce]
+            
+            #Calculate XOR of Ciphertexts and XOR of Plaintexts
+            XorCiphertexts = XORByter(OldCiphertext, Ciphertext) # C1 ^ C2
+            XorPlaintexts  = XORByter(OldPlaintext, Plaintext)   # P1 ^ P2
+            
+            print(f"\n--- PROOF: C1^C2 == P1^P2 ---")
+            print(f"P1 (Old): {OldPlaintext}")
+            print(f"P2 (New): {Plaintext}")
+            print("-" * 40)
+            print(f"Calculated (C1 ^ C2): {XorCiphertexts.hex()}")
+            print(f"Calculated (P1 ^ P2): {XorPlaintexts.hex()}")
+            
+            if XorCiphertexts == XorPlaintexts:
+                print("\nThe mathematical relationship holds.")
+                print("          Keystream reuse confirmed.")
+            else:
+                print("\nFailure has occured")
+                
+            break #Stop after finding the vulnerability
+
+        #Store for collision checking
+        History[Nonce] = (Ciphertext, Plaintext)
+
+def CTRNonce(NonceBits=16):
+    """
+    Generates random nonces until a collision is found.
+    Returns the number of times needed till a collision is found.
+    """
+    SeenNonces = set()
+    Trials = 0
+    MaxNonceValues = 2**NonceBits
+    
+    while True:
+        Trials += 1
+        #Generates a random integer acting as the nonce
+        Nonce = secrets.randbelow(MaxNonceValues)
+        
+        if Nonce in SeenNonces:
+            return Trials #Collision has occured
+        
+        SeenNonces.add(Nonce)
+
+
+if __name__ == "__main__":
+    NONCE_BITS = 16
+    NUM_EXPERIMENTS = 20
+    Results = []
+
+    print(f"Running {NUM_EXPERIMENTS} experiments with {NONCE_BITS}-bit nonces...")
+    print("-" * 40)
+
+    #Run the Statistical Experiments
+    for i in range(NUM_EXPERIMENTS):
+        q = CTRNonce(NONCE_BITS)
+        Results.append(q)
+        print(f"Run {i+1}: Collision after {q} encryptions")
+
+    #Calculate the statistics
+    Average = sum(Results) / len(Results)
+    Approximation = 1.25 * (2**(NONCE_BITS / 2))
+
+    print("-" * 40)
+    print(f"Average collisions: {Average:.2f}")
+    print(f"Theoretical estimate:   {Approximation:.2f}")
+    print("-" * 40)
+
+    #Run the Demonstration
+    DemonstrateTwoTimePad(NONCE_BITS)
 ```
 
 ### Nonce Size Used
 
-**r =** [e.g., 16 bits]
-**Theoretical birthday bound:** q ≈ 1.2 × 2^(r/2) ≈ [VALUE]
+**Nonce Bits =** [16 bits]
+**Theoretical birthday bound:** q ≈ 1.25 × 2^(Nonce Bits/2) ≈ 320
 
 ### Collision Experiment Results (≥ 20 Runs)
 
-| Run | Encryptions Until Collision |
-|-----|-----------------------------|
-| 1   |                             |
-| 2   |                             |
-| 3   |                             |
-| 4   |                             |
-| 5   |                             |
-| 6   |                             |
-| 7   |                             |
-| 8   |                             |
-| 9   |                             |
-| 10  |                             |
-| 11  |                             |
-| 12  |                             |
-| 13  |                             |
-| 14  |                             |
-| 15  |                             |
-| 16  |                             |
-| 17  |                             |
-| 18  |                             |
-| 19  |                             |
-| 20  |                             |
+| Run | Encryptions Until Collision     |
+|-----|---------------------------------|
+| 1   | Collision after 106 encryptions |
+| 2   | Collision after 274 encryptions |
+| 3   | Collision after 68 encryptions |
+| 4   | Collision after 325 encryptions |
+| 5   | Collision after 478 encryptions |
+| 6   | Collision after 581 encryptions |
+| 7   | Collision after 303 encryptions |
+| 8   | Collision after 371 encryptions |
+| 9   | Collision after 182 encryptions |
+| 10  | Collision after 128 encryptions |
+| 11  | Collision after 170 encryptions |
+| 12  | Collision after 563 encryptions |
+| 13  | Collision after 504 encryptions |
+| 14  | Collision after 705 encryptions |
+| 15  | Collision after 331 encryptions |
+| 16  | Collision after 517 encryptions |
+| 17  | Collision after 383 encryptions |
+| 18  | Collision after 383 encryptions |
+| 19  | Collision after 302 encryptions |
+| 20  | Collision after 161 encryptions |
 
-**Average collision point:** [VALUE]
+**Average collision point:** 341.75
 
 ### Comparison to Theoretical Birthday Bound
 
-| Metric | Value |
-|--------|-------|
-| r (nonce bits) | [VALUE] |
-| Theoretical bound (1.2 × 2^(r/2)) | [VALUE] |
-| Observed average | [VALUE] |
-| Difference | [VALUE] |
+| Metric                            | Value |
+|-----------------------------------|-------|
+| r (nonce bits)                    | 16    |
+| Theoretical bound (1.2 × 2^(r/2)) | 320   |
+| Observed average                  | 341.75|
+| Difference                        | 21.75 |
 
-[BRIEFLY DISCUSS whether observed average aligns with the theoretical bound and any deviation]
+The observed average number of trials required to produce a collision was 341.75, this closely aligns with the theoretical birthday bound estimate of 320. The deviation of 21.75 (or 6.8%) is insignificant and is expected due to the nature of the task and the small sample size. Theoretically with more itterations the average would be much closer to the theoretical limit, this result confirms the Birthday Paradox as the collisions occurred in the hundreds range instead of the tens of thousands range demonstrating how quickly a small nonce space is exhausted.
 
 ### Collision Enabling Two-Time Pad Demonstration
 
-[INSERT SCREENSHOT OR OUTPUT: Showing that the two colliding-nonce ciphertexts XOR to P1 XOR P2]
-
-```
-# [PASTE EVIDENCE HERE]
-```
+![Task 5 Results](Screenshots/Task5.png)
 
 ### Explanation: How Nonce Collision Leads to CTR Insecurity
 
-[EXPLAIN that because CTR generates keystream as K_i = E_k(Nonce || Counter_i), two encryptions sharing the same nonce produce the same keystream. A birthday collision therefore creates a two-time pad scenario where C1 XOR C2 = P1 XOR P2, allowing an attacker to recover plaintext structure. This is why nonce/counter uniqueness is a hard requirement for CTR security.]
+The security of AES-CTR relies entirely on the uniqueness of the input block (Nonce + Counter) to ensure that the output keystream is unique for every encryption. As demonstrated in Task 5 as the number of our encrypted messages increases, the probability of generating a duplicate nonce increases according to the Birthday Paradox. If a nonce collision occurs while using the same key, the encryption system generates the exact same keystream for two different messages. This collision immediately recreates the conditions of the Two-Time Pad vulnerability mentioned in task 4. Once the collision occurs (C1⊕C2=P1⊕P2) an attacker to bypass the AES encryption entirely and recover plaintext using simple XOR operations. Therefore, nonce uniqueness is not merely a best practice but a hard requirement as without it the confidentiality of CTR fails.
 
 ---
 
