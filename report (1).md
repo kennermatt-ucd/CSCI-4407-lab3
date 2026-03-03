@@ -1,9 +1,9 @@
-# Lab 3 - Groub 10 - Symmetric Encryption: Block Ciphers, IND-CPA, AEAD & Cryptographic Failures
+# Lab 3 — Symmetric Encryption: Block Ciphers, IND-CPA, AEAD & Cryptographic Failures
 
 **Course:** CSCI/CSCY 4407 — Security & Cryptography
 **Semester:** Spring 2026
-**Date:** 02/27/26
-**Group Members:** Cassius Kemp, Matthew Kenner, Jonathan Le
+**Date:** [DATE]
+**Group Members:** [NAMES]
 
 ---
 
@@ -12,169 +12,57 @@
 ### Source Code
 
 ```python
-"""
-Task 1 — ECB Distinguisher (15 pts)
-====================================
-Demonstrates that AES-ECB is deterministic and fails IND-CPA.
-
-Approach:
-- P0: repeated 16-byte block (same block N times)
-- P1: random bytes of the same length
-- Encrypt both under AES-ECB with a random key
-- Distinguisher counts duplicate 16-byte ciphertext blocks
-- Run >= 20 trials, record success rate and IND-CPA advantage
-"""
-
-import os
-import random
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-
-BLOCK_SIZE = 16
-NUM_BLOCKS = 8       # plaintext length = NUM_BLOCKS * 16 bytes
-NUM_TRIALS = 20
-
-
-# ---------------------------------------------------------------------------
-# AES-ECB helpers
-# ---------------------------------------------------------------------------
-
-def generate_key() -> bytes:
-    """Generate a random 256-bit AES key."""
-    return os.urandom(32)
-
-
-def ecb_encrypt(key: bytes, plaintext: bytes) -> bytes:
-    """Encrypt plaintext under AES-ECB (plaintext must be block-aligned)."""
-    cipher = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
-    encryptor = cipher.encryptor()
-    return encryptor.update(plaintext) + encryptor.finalize()
-
-
-# ---------------------------------------------------------------------------
-# Plaintext generation
-# ---------------------------------------------------------------------------
-
-def make_p0(num_blocks: int = NUM_BLOCKS) -> bytes:
-    """P0: the same 16-byte block repeated num_blocks times."""
-    block = os.urandom(BLOCK_SIZE)
-    return block * num_blocks
-
-
-def make_p1(num_blocks: int = NUM_BLOCKS) -> bytes:
-    """P1: num_blocks of independent random 16-byte blocks."""
-    return os.urandom(num_blocks * BLOCK_SIZE)
-
-
-# ---------------------------------------------------------------------------
-# Distinguisher
-# ---------------------------------------------------------------------------
-
-def count_duplicate_blocks(ciphertext: bytes) -> int:
-    """Return the number of repeated 16-byte blocks in ciphertext."""
-    blocks = [ciphertext[i:i + BLOCK_SIZE] for i in range(0, len(ciphertext), BLOCK_SIZE)]
-    return len(blocks) - len(set(blocks))
-
-
-def distinguisher(ciphertext: bytes) -> int:
-    """
-    Guess b' based on ciphertext structure.
-    Returns 0 if repeated blocks detected (guess: P0 was encrypted),
-    Returns 1 otherwise (guess: P1 was encrypted).
-    """
-    if count_duplicate_blocks(ciphertext) > 0:
-        return 0   # b' = 0  (looks like repeated plaintext)
-    return 1       # b' = 1  (looks like random plaintext)
-
-
-# ---------------------------------------------------------------------------
-# IND-CPA game
-# ---------------------------------------------------------------------------
-
-def run_trial(key: bytes) -> bool:
-    """
-    One trial of the IND-CPA experiment.
-    Choose b randomly, encrypt P_b, run distinguisher, return whether b' == b.
-    """
-    b = random.randint(0, 1)
-    plaintext = make_p0() if b == 0 else make_p1()
-    ciphertext = ecb_encrypt(key, plaintext)
-    b_prime = distinguisher(ciphertext)
-    return b_prime == b
-
-
-def run_experiment(num_trials: int = NUM_TRIALS) -> None:
-    key = generate_key()
-    print(f"AES key (hex): {key.hex()}")
-    print(f"Plaintext length: {NUM_BLOCKS * BLOCK_SIZE} bytes ({NUM_BLOCKS} blocks)\n")
-
-    # Show an example of P0 vs P1 encryption to illustrate block repetition
-    p0 = make_p0()
-    p1 = make_p1()
-    c0 = ecb_encrypt(key, p0)
-    c1 = ecb_encrypt(key, p1)
-    print("=== Example ciphertexts ===")
-    print(f"C0 (from repeated P0): {c0.hex()}")
-    print(f"  duplicate blocks: {count_duplicate_blocks(c0)}")
-    print(f"C1 (from random   P1): {c1.hex()}")
-    print(f"  duplicate blocks: {count_duplicate_blocks(c1)}\n")
-
-    # Run trials
-    print(f"{'Trial':<8} {'b':<6} {'b_prime':<10} {'Correct'}")
-    print("-" * 35)
-    correct = 0
-    for i in range(1, num_trials + 1):
-        b = random.randint(0, 1)
-        plaintext = make_p0() if b == 0 else make_p1()
-        ciphertext = ecb_encrypt(key, plaintext)
-        b_prime = distinguisher(ciphertext)
-        result = b_prime == b
-        if result:
-            correct += 1
-        print(f"{i:<8} {b:<6} {b_prime:<10} {'Yes' if result else 'No'}")
-
-    success_rate = correct / num_trials
-    advantage = abs(success_rate - 0.5)
-    print(f"\nCorrect: {correct}/{num_trials}")
-    print(f"Success rate: {success_rate:.2%}")
-    print(f"Adv_IND-CPA = |Pr[b'=b] - 1/2| = {advantage:.4f}")
-
-
-if __name__ == "__main__":
-    run_experiment()
+# [PASTE ECB ENCRYPTION + DISTINGUISHER CODE HERE]
 ```
 
 ### Repeated Ciphertext Block Evidence
-Ciphertext output showing duplicate 16-byte blocks for P0 (repeated plaintext)
+
+[INSERT SCREENSHOT: Ciphertext output showing duplicate 16-byte blocks for P0 (repeated plaintext)]
+
+```
+# [PASTE HEX OUTPUT OR BLOCK COMPARISON HERE]
+```
 
 ### Trial Results Table (≥ 20 Trials)
 
-![alt text](Screenshots/ecb_distinguisher_t1.png)
-
-
+| Trial | b (chosen) | b' (guessed) | Correct? |
+|-------|-----------|--------------|----------|
+| 1     |           |              |          |
+| 2     |           |              |          |
+| 3     |           |              |          |
+| 4     |           |              |          |
+| 5     |           |              |          |
+| 6     |           |              |          |
+| 7     |           |              |          |
+| 8     |           |              |          |
+| 9     |           |              |          |
+| 10    |           |              |          |
+| 11    |           |              |          |
+| 12    |           |              |          |
+| 13    |           |              |          |
+| 14    |           |              |          |
+| 15    |           |              |          |
+| 16    |           |              |          |
+| 17    |           |              |          |
+| 18    |           |              |          |
+| 19    |           |              |          |
+| 20    |           |              |          |
 
 ### Success Rate and Advantage
 
-**Number of correct guesses:** [20 / 20]
+**Number of correct guesses:** [X / 20]
 
-**Success Rate:** [20 / 20 = 100%]
+**Success Rate:** [X / 20 = X%]
 
 **IND-CPA Advantage:**
 
 ```
-Adv_IND-CPA = |Pr[b' = b] - 1/2| = |1.0 - 0.5| = 0.5
+Adv_IND-CPA = |Pr[b' = b] - 1/2| = [VALUE]
 ```
 
 ### Explanation: Why ECB Violates Semantic Security
 
-ECB mode encrypts each 16-byte block independently and deterministically:
-
-    C_i = E_k(P_i)
-
-Because AES-ECB uses no IV/nonce, the same plaintext block always produces the same ciphertext block under the same key. Therefore, if a plaintext contains repeated blocks (P_i = P_j), ECB will produce repeated ciphertext blocks (C_i = C_j). This leaks structural information about the plaintext (e.g., repetitions/patterns) even though the key is secret.
-
-This violates semantic security / IND-CPA because an attacker can distinguish between encryptions of two chosen messages with non-negligible advantage. In our experiment, P0 was constructed with repeated 16-byte blocks, which caused repeated ciphertext blocks after encryption. P1 was random-looking and produced no repeated ciphertext blocks. The distinguisher simply checks for duplicate ciphertext blocks; if duplicates exist it guesses “P0,” otherwise it guesses “P1.” Across 20 trials the distinguisher succeeded 20/20 times, giving Pr[b'=b]=1.0 and an IND-CPA advantage of 0.5, far better than random guessing (0.5). Therefore, ECB is not IND-CPA secure.
-
+[EXPLAIN why ECB is deterministic (C_i = E_k(P_i)) and why identical plaintext blocks always produce identical ciphertext blocks. Explain why this pattern leakage means an adversary can distinguish encryptions of different messages, and therefore ECB fails IND-CPA.]
 
 ---
 
@@ -183,153 +71,40 @@ This violates semantic security / IND-CPA because an attacker can distinguish be
 ### Source Code
 
 ```python
-"""
-Task 2 — CBC IV Experiment (15 pts)
-=====================================
-Demonstrates the effect of IV handling in AES-CBC.
-
-CBC formula: C_i = E_k(P_i XOR C_{i-1}),  C_0 = IV
-
-Experiments:
-1. Fresh IV each time  → different ciphertexts (unlinkable)
-2. Reused IV           → identical ciphertexts (linkable / deterministic)
-3. Verify decryption correctness via SHA-256
-"""
-
-import os
-import hashlib
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.backends import default_backend
-
-BLOCK_SIZE = 16
-PLAINTEXT_SIZE = 256  # >= 256 bytes as required
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def pkcs7_pad(data: bytes, block_size: int = BLOCK_SIZE) -> bytes:
-    padder = padding.PKCS7(block_size * 8).padder()
-    return padder.update(data) + padder.finalize()
-
-
-def pkcs7_unpad(data: bytes, block_size: int = BLOCK_SIZE) -> bytes:
-    unpadder = padding.PKCS7(block_size * 8).unpadder()
-    return unpadder.update(data) + unpadder.finalize()
-
-
-def cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
-    """Encrypt plaintext with AES-CBC using PKCS#7 padding."""
-    padded = pkcs7_pad(plaintext)
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    encryptor = cipher.encryptor()
-    return encryptor.update(padded) + encryptor.finalize()
-
-
-def cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
-    """Decrypt ciphertext with AES-CBC and remove PKCS#7 padding."""
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-    decryptor = cipher.decryptor()
-    padded = decryptor.update(ciphertext) + decryptor.finalize()
-    return pkcs7_unpad(padded)
-
-
-# ---------------------------------------------------------------------------
-# Experiments
-# ---------------------------------------------------------------------------
-
-def experiment_fresh_iv(key: bytes, plaintext: bytes) -> None:
-    """
-    Encrypt the same plaintext twice with DIFFERENT random IVs.
-    Expected: ciphertexts differ — SHA-256 hashes should not match.
-    """
-    print("=== Experiment 1: Fresh IV (different each time) ===")
-    iv1 = os.urandom(BLOCK_SIZE)
-    iv2 = os.urandom(BLOCK_SIZE)
-    c1 = cbc_encrypt(key, iv1, plaintext)
-    c2 = cbc_encrypt(key, iv2, plaintext)
-    h1 = sha256(c1)
-    h2 = sha256(c2)
-    print(f"  IV1:             {iv1.hex()}")
-    print(f"  IV2:             {iv2.hex()}")
-    print(f"  SHA-256(C1):     {h1}")
-    print(f"  SHA-256(C2):     {h2}")
-    print(f"  Ciphertexts match: {h1 == h2}  (expected: False)\n")
-
-
-def experiment_reused_iv(key: bytes, plaintext: bytes) -> None:
-    """
-    Encrypt the same plaintext twice with the SAME IV.
-    Expected: ciphertexts are identical — SHA-256 hashes must match.
-    """
-    print("=== Experiment 2: Reused IV (same IV both times) ===")
-    iv = os.urandom(BLOCK_SIZE)
-    c1 = cbc_encrypt(key, iv, plaintext)
-    c2 = cbc_encrypt(key, iv, plaintext)
-    h1 = sha256(c1)
-    h2 = sha256(c2)
-    print(f"  IV:              {iv.hex()}")
-    print(f"  SHA-256(C1):     {h1}")
-    print(f"  SHA-256(C2):     {h2}")
-    print(f"  Ciphertexts match: {h1 == h2}  (expected: True)\n")
-
-
-def experiment_decryption_verification(key: bytes, plaintext: bytes) -> None:
-    """
-    Encrypt then decrypt and verify via SHA-256.
-    """
-    print("=== Experiment 3: Decryption Correctness (SHA-256 verification) ===")
-    iv = os.urandom(BLOCK_SIZE)
-    ciphertext = cbc_encrypt(key, iv, plaintext)
-    recovered = cbc_decrypt(key, iv, ciphertext)
-    h_orig = sha256(plaintext)
-    h_recv = sha256(recovered)
-    print(f"  SHA-256(original):  {h_orig}")
-    print(f"  SHA-256(decrypted): {h_recv}")
-    print(f"  Match: {h_orig == h_recv}  (expected: True)\n")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    key = os.urandom(32)
-    plaintext = os.urandom(PLAINTEXT_SIZE)
-
-    print(f"AES key (hex): {key.hex()}")
-    print(f"Plaintext length: {len(plaintext)} bytes\n")
-
-    experiment_fresh_iv(key, plaintext)
-    experiment_reused_iv(key, plaintext)
-    experiment_decryption_verification(key, plaintext)
+# [PASTE CBC ENCRYPTION/DECRYPTION CODE WITH PKCS#7 PADDING HERE]
 ```
 
-### Evidence: Fresh IV → Different Ciphertext Experiment 1
+### Evidence: Fresh IV → Different Ciphertext
+
+[INSERT SCREENSHOT: Two encryptions of the same plaintext under different IVs producing different ciphertexts]
+
+```
+# [PASTE SHA-256 HASHES OF BOTH CIPHERTEXTS HERE — THEY SHOULD DIFFER]
+SHA-256(C_fresh_1): [HASH]
+SHA-256(C_fresh_2): [HASH]
+```
 
 ### Evidence: Reused IV → Linkability
 
+[INSERT SCREENSHOT: Two encryptions under the same IV producing the same or linkable ciphertext]
+
+```
+# [PASTE SHA-256 HASHES OF BOTH CIPHERTEXTS HERE — THEY SHOULD MATCH]
+SHA-256(C_reused_1): [HASH]
+SHA-256(C_reused_2): [HASH]
+```
+
 ### Decryption Verification (SHA-256)
 
-![alt text](Screenshots/cbc_iv_t2.png)
-
+```
+SHA-256(original plaintext): [HASH]
+SHA-256(decrypted plaintext): [HASH]
+Match: [YES/NO]
+```
 
 ### Explanation: Why a Fresh IV Is Required
 
-CBC mode uses an initialization vector (IV) in the first block:
-
-    C1 = E_k(P1 ⊕ IV)
-    Ci = E_k(Pi ⊕ C_{i-1}) for i ≥ 2
-
-The IV must be fresh (unique and unpredictable) for each encryption under the same key. When we encrypted the same plaintext twice with two different random IVs, the ciphertexts differed (their SHA-256 hashes were different), which is expected because changing the IV changes the input to the first block and therefore changes the entire chained ciphertext.
-
-When we reused the same IV to encrypt the same plaintext twice, we obtained identical ciphertexts (matching SHA-256 hashes). This creates linkability: an observer can tell that the same message (or at least the same first block) was encrypted again under the same key/IV pair. Therefore, IV reuse undermines semantic security in CBC by leaking relationships between messages. Using a fresh random IV each time prevents this linkability and is required for CBC to achieve IND-CPA-style confidentiality.
+[EXPLAIN that CBC chains each block as C_i = E_k(P_i XOR C_{i-1}) with C_0 = IV. If the IV is reused with the same key and same plaintext, the ciphertext is identical — leaking that the same message was sent. Even with different plaintexts, a reused IV allows an attacker to detect when the first block is the same. A fresh random IV per encryption ensures ciphertexts are unlinkable and semantically secure.]
 
 ---
 
